@@ -19,6 +19,7 @@ _base_config = SettingsConfigDict(
 class ApplicationSettings(BaseSettings):
     APP_NAME: str
     APP_DOMAIN: AnyHttpUrl
+    FRONTEND_URL: str
 
     model_config = _base_config
 
@@ -52,8 +53,17 @@ class RedisSettings(BaseSettings):
 
     model_config = _base_config
 
-    def redis_url(self, db: int):
-        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{db}"
+    @property
+    def redis_url(self):
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{0}"
+
+    @property
+    def celery_broker_url(self):
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{1}"
+
+    @property
+    def celery_result_backend(self):
+        return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{2}"
 
 
 class SecuritySetting(BaseSettings):
@@ -84,6 +94,13 @@ class EmailSettings(BaseSettings):
     model_config = _base_config
 
 
+class VerificationSettings(BaseSettings):
+    VERIFICATION_TOKEN_PEPPER: str
+    EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: int
+    EMAIL_VERIFICATION_RESEND_COOLDOWN_SECONDS: int
+    EMAIL_VERIFICATION_MAX_SENDS_PER_DAY: int
+
+
 # APPLICATION SETTINGS
 app_settings = ApplicationSettings() # type: ignore[call-arg] #loaded from .env file
 
@@ -100,3 +117,6 @@ PUBLIC_KEY = security.JWT_PUBLIC_KEY.get_secret_value().replace("\\n", "\n")
 
 # EMAIL SETTINGS
 email_settings = EmailSettings() # type: ignore[call-arg] #loaded from .env file
+
+# VERIFICATION SETTINGS
+verification_settings = VerificationSettings() # type: ignore[call-arg] #loaded from .env file

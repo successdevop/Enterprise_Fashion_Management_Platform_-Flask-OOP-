@@ -4,11 +4,11 @@ from uuid import UUID
 from sqlalchemy import Column, DateTime, Index
 from sqlmodel import SQLModel, Field
 
-from app.schemas.email.enums import EmailVerificationStatus
-from base_models.base_models import UUIDPrimaryKeyMixin
+from app.enums.email import EmailVerificationStatus
+from base_models.base_models import UUIDPrimaryKeyMixin, TimestampMixin
 
 
-class EmailVerification(UUIDPrimaryKeyMixin, SQLModel, table=True):
+class EmailVerification(UUIDPrimaryKeyMixin, TimestampMixin, SQLModel, table=True):
     __tablename__ = "email_verification"
 
     user_id: UUID = Field(

@@ -36,3 +36,6 @@ class InvalidAccessTokenError(SeamlessFashionErrors):
 
 class InvalidAuthenticationCredentials(SeamlessFashionErrors):
     pass
+
+class UserNotFoundError(SeamlessFashionErrors):
+    pass

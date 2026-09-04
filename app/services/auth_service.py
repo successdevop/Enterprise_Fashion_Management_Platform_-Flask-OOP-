@@ -4,6 +4,8 @@ from uuid import uuid4, UUID
 
 from sqlalchemy.exc import IntegrityError
 
+from app.config.config import verification_settings
+from app.enums.email import EmailVerificationStatus
 from app.schemas.base_or_shared.audit import AuditLogCreate
 from app.security.model.auth_session import AuthSession
 from app.security.model.refresh_token import RefreshToken
@@ -12,12 +14,15 @@ from app.security.service.passwd_policy import PasswordPolicy
 from app.security.service.passwd_service import PasswordService
 from app.security.service.token_service import TokenService
 from app.transactions_mgt.auth import AuthUnitOfWork
-from app.exceptions.exceptions import EmailAlreadyExistsError, UsernameAlreadyTakenError, PhoneNumberAlreadyExistsError, \
-    DatabaseIntegrityError, InvalidPasswordError, InvalidCredentialsError, InactiveAccountError, \
-    InvalidRefreshTokenError, RefreshTokenReuseDetected, InvalidAccessTokenError, EmailNotVerifiedError
 from app.models import User
 from app.schemas.identity.user import UserCreate, TokenResponse
-from app.utils.auth import hash_refresh_token
+from app.utils.auth import hash_refresh_token, generate_url_safe_token, hash_function
+from app.exceptions.exceptions import (
+    EmailAlreadyExistsError, UsernameAlreadyTakenError, PhoneNumberAlreadyExistsError, DatabaseIntegrityError,
+    InvalidPasswordError, InvalidCredentialsError, InactiveAccountError, InvalidRefreshTokenError,
+    RefreshTokenReuseDetected, InvalidAccessTokenError, EmailNotVerifiedError
+)
+from email.email import EmailVerification
 
 
 class AuthService:
@@ -71,11 +76,10 @@ class AuthService:
             # manage transaction using unit_of_work pattern to make registration atomic
             await self._authUoW.users.add_and_flush(new_user)
 
-            await self._authUoW.outbox_messages.add_and_flush(
-                event_type="user.registration",
-                payload={"user_id": str(new_user.id), "email": new_user.email}
-            )
+            # create email verification and outbox record
+            await self._create_verification(user=new_user)
 
+            # create audit record
             audit = {
                 "actor_id": new_user.id, "audit_action":"USER_REGISTERED",
                 "resource_type":"User", "resource_id":new_user.id
@@ -85,6 +89,7 @@ class AuthService:
                 audit_schema=AuditLogCreate(**audit)
             )
 
+            # commit and return user
             await self._authUoW.commit()
             return new_user
 
@@ -383,4 +388,34 @@ class AuthService:
         except Exception:
             await self._authUoW.rollback()
             raise
-        pass
+
+    ## CREATE EMAIL VERIFICATION
+    async def _create_verification(self, user: User):
+        now = datetime.now(tz=timezone.utc)
+
+        new_token = generate_url_safe_token()
+
+        token_hash = hash_function(hashable=new_token)
+
+        expires_at = now + timedelta(minutes=verification_settings.EMAIL_VERIFICATION_TOKEN_TTL_MINUTES)
+
+        verification = EmailVerification(
+            user_id=user.id,
+            email=user.email,
+            token_hash=token_hash,
+            status=EmailVerificationStatus.PENDING,
+            expires_at=expires_at
+        )
+
+        await self._authUoW.email.add_and_flush(verification=verification)
+
+        await self._authUoW.outbox_messages.add_and_flush(
+            event_type="email.verification",
+            payload={
+                "verification_id": str(verification.id),
+                "user_id": str(user.id),
+                "token": new_token
+            }
+        )
+
+
